@@ -62,6 +62,10 @@ public final class LRFUEvictor extends AbstractEvictor {
   /** Logic time count. */
   private AtomicLong mLogicTimeCount = new AtomicLong(0L);
 
+  private final Map<Long, Map<Long, Long>> mUserIdToBlockLastUpdateTimeMap = new ConcurrentHashMap<>();
+  private final Map<Long, Map<Long, Double>> mUserIdToBlockCRFValueMap = new ConcurrentHashMap<>();
+  private final Map<Long, AtomicLong> mUserIdToLogicTimeCountMap = new ConcurrentHashMap<>();
+
   /**
    * Creates a new instance of {@link LRFUEvictor}.
    *
@@ -79,14 +83,14 @@ public final class LRFUEvictor extends AbstractEvictor {
         "Attenuation factor should be no less than 2.0");
 
     // Preloading blocks
-    for (StorageTierView tier : mMetadataView.getTierViews()) {
+    /*for (StorageTierView tier : mMetadataView.getTierViews()) {
       for (StorageDirView dir : tier.getDirViews()) {
         for (BlockMeta block : ((StorageDirEvictorView) dir).getEvictableBlocks()) {
           mBlockIdToLastUpdateTime.put(block.getBlockId(), 0L);
           mBlockIdToCRFValue.put(block.getBlockId(), 0.0);
         }
       }
-    }
+    }*/
   }
 
   /**
@@ -124,13 +128,33 @@ public final class LRFUEvictor extends AbstractEvictor {
   }
 
   @Override
+  @Nullable
+  public EvictionPlan freeUserSpaceWithView(long userId, long bytesToBeAvailable,
+      BlockStoreLocation location, BlockMetadataEvictorView view, Mode mode) {
+    updateUserCRFValue(userId);
+    mMetadataView = view;
+    List<BlockTransferInfo> toMove = new ArrayList<>();
+    List<Pair<Long, BlockStoreLocation>> toEvict = new ArrayList<>();
+    EvictionPlan plan = new EvictionPlan(toMove, toEvict);
+    StorageDirEvictorView candidateDir
+        = cascadingEvictUser(userId, bytesToBeAvailable, location, plan, mode);
+
+    mMetadataView.clearBlockMarks();
+    if (candidateDir == null) {
+      return null;
+    }
+
+    return plan;
+  }
+
+  @Override
   protected Iterator<Long> getBlockIterator() {
     return Iterators.transform(getSortedCRF().iterator(), Entry::getKey);
   }
 
   @Override
   protected Iterator<Long> getUserBlockIterator(long userId) {
-    return null;
+    return Iterators.transform(getUserSortedCRF(userId).iterator(), Entry::getKey);
   }
 
   /**
@@ -140,6 +164,12 @@ public final class LRFUEvictor extends AbstractEvictor {
    */
   private List<Map.Entry<Long, Double>> getSortedCRF() {
     List<Map.Entry<Long, Double>> sortedCRF = new ArrayList<>(mBlockIdToCRFValue.entrySet());
+    sortedCRF.sort(Comparator.comparingDouble(Entry::getValue));
+    return sortedCRF;
+  }
+
+  private List<Map.Entry<Long, Double>> getUserSortedCRF(long userId){
+    List<Map.Entry<Long, Double>> sortedCRF = new ArrayList<>(mUserIdToBlockCRFValueMap.get(userId).entrySet());
     sortedCRF.sort(Comparator.comparingDouble(Entry::getValue));
     return sortedCRF;
   }
@@ -174,6 +204,41 @@ public final class LRFUEvictor extends AbstractEvictor {
     mBlockIdToLastUpdateTime.remove(blockId);
     mBlockIdToCRFValue.remove(blockId);
   }
+  @Override
+  protected void onRemoveUserBlockFromIterator(long userId, long blockId) {
+    if (mUserIdToBlockCRFValueMap.containsKey(userId)){
+      mUserIdToBlockCRFValueMap.get(userId).remove(blockId);
+    }
+    if (mUserIdToBlockLastUpdateTimeMap.containsKey(userId)){
+      mUserIdToBlockLastUpdateTimeMap.get(userId).remove(blockId);
+    }
+  }
+
+  @Override
+  public void onUserAccessBlock(long sessionId, long userId, long blockId) {
+    updateOnUserAccessAndCommitBlock(userId, blockId);
+  }
+
+  @Override
+  public void onUserCommitBlock(long sessionId, long userId, long blockId,
+      BlockStoreLocation location) {
+    updateOnUserAccessAndCommitBlock(userId, blockId);
+  }
+
+  @Override
+  public void onUserRemoveBlockByClient(long sessionId, long userId, long blockId) {
+    updateOnRemoveUserBlock(userId, blockId);
+  }
+
+  @Override
+  public void onUserRemoveBlockByWorker(long sessionId, long userId, long blockId) {
+    updateOnRemoveUserBlock(userId, blockId);
+  }
+
+  @Override
+  public void onUserBlockLost(long userId, long blockId) {
+    updateOnRemoveUserBlock(userId, blockId);
+  }
 
   /**
    * This function is used to update CRF of all the blocks according to current logic time. When
@@ -192,6 +257,21 @@ public final class LRFUEvictor extends AbstractEvictor {
       mBlockIdToCRFValue.put(blockId, crfValue
           * calculateAccessWeight(currentLogicTime - mBlockIdToLastUpdateTime.get(blockId)));
       mBlockIdToLastUpdateTime.put(blockId, currentLogicTime);
+    }
+  }
+  private void updateUserCRFValue(long userId){
+    Map<Long, Long> blockIdToLastUpdateTime = mUserIdToBlockLastUpdateTimeMap.get(userId);
+    Map<Long, Double> blockIdToCRFValue = mUserIdToBlockCRFValueMap.get(userId);
+    AtomicLong logicTimeCount = mUserIdToLogicTimeCountMap.get(userId);
+    if (blockIdToCRFValue != null && blockIdToLastUpdateTime != null && logicTimeCount != null) {
+      long currentLogicTime = logicTimeCount.get();
+      for (Entry<Long, Double> entry : blockIdToCRFValue.entrySet()) {
+        long blockId = entry.getKey();
+        double crfValue = entry.getValue();
+        blockIdToCRFValue.put(blockId, crfValue
+            * calculateAccessWeight(currentLogicTime - blockIdToLastUpdateTime.get(blockId)));
+        blockIdToLastUpdateTime.put(blockId, currentLogicTime);
+      }
     }
   }
 
@@ -221,6 +301,34 @@ public final class LRFUEvictor extends AbstractEvictor {
     }
   }
 
+  private void updateOnUserAccessAndCommitBlock(long userId, long blockId){
+    Map<Long, Long> blockIdToLastUpdateTime = mUserIdToBlockLastUpdateTimeMap.get(userId);
+    Map<Long, Double> blockIdToCRFValue = mUserIdToBlockCRFValueMap.get(userId);
+    AtomicLong logicTimeCount = mUserIdToLogicTimeCountMap.get(userId);
+    if (blockIdToCRFValue == null) {
+      blockIdToCRFValue = new ConcurrentHashMap<>();
+      mUserIdToBlockCRFValueMap.put(userId, blockIdToCRFValue);
+    }
+    if (blockIdToLastUpdateTime == null) {
+      blockIdToLastUpdateTime = new ConcurrentHashMap<>();
+      mUserIdToBlockLastUpdateTimeMap.put(userId, blockIdToLastUpdateTime);
+    }
+    if (logicTimeCount == null) {
+      logicTimeCount = new AtomicLong(0L);
+      mUserIdToLogicTimeCountMap.put(userId, logicTimeCount);
+    }
+    long currentLogicTime = logicTimeCount.incrementAndGet();
+    if (blockIdToCRFValue.containsKey(blockId)){
+      blockIdToCRFValue.put(blockId, blockIdToCRFValue.get(blockId)
+          * calculateAccessWeight(currentLogicTime - blockIdToLastUpdateTime.get(blockId))
+          + 1.0);
+    }
+    else {
+      blockIdToCRFValue.put(blockId, 1.0);
+    }
+    blockIdToLastUpdateTime.put(blockId, currentLogicTime);
+  }
+
   /**
    * Updates {@link #mBlockIdToLastUpdateTime} and {@link #mBlockIdToCRFValue} when block is
    * removed.
@@ -231,6 +339,17 @@ public final class LRFUEvictor extends AbstractEvictor {
     synchronized (mBlockIdToLastUpdateTime) {
       mLogicTimeCount.incrementAndGet();
       mBlockIdToCRFValue.remove(blockId);
+      mBlockIdToLastUpdateTime.remove(blockId);
+    }
+  }
+
+  private void updateOnRemoveUserBlock(long userId, long blockId){
+    Map<Long, Long> blockIdToLastUpdateTime = mUserIdToBlockLastUpdateTimeMap.get(userId);
+    Map<Long, Double> blockIdToCRFValue = mUserIdToBlockCRFValueMap.get(userId);
+    AtomicLong logicTimeCount = mUserIdToLogicTimeCountMap.get(userId);
+    if (blockIdToCRFValue != null && blockIdToLastUpdateTime != null && logicTimeCount != null) {
+      logicTimeCount.incrementAndGet();
+      blockIdToCRFValue.remove(blockId);
       mBlockIdToLastUpdateTime.remove(blockId);
     }
   }

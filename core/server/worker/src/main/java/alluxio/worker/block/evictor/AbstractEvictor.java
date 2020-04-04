@@ -245,8 +245,11 @@ public abstract class AbstractEvictor extends AbstractBlockStoreEventListener im
           if (block.getBlockLocation().belongsTo(location)) {
             String tierAlias = block.getParentDir().getParentTier().getTierAlias();
             int dirIndex = block.getParentDir().getDirIndex();
-            dirCandidates.add((StorageDirEvictorView) mMetadataView.getTierView(tierAlias)
-                .getDirView(dirIndex), blockId, block.getBlockSize());
+            long blockUseCount =  mMetadataView.getBlockUseCount(block);
+            if (blockUseCount > 0){
+              dirCandidates.add((StorageDirEvictorView) mMetadataView.getTierView(tierAlias)
+                  .getDirView(dirIndex), blockId, block.getBlockSize() / blockUseCount);
+            }
           }
         }
       } catch (BlockDoesNotExistException e) {
@@ -277,8 +280,11 @@ public abstract class AbstractEvictor extends AbstractBlockStoreEventListener im
         try {
           BlockMeta block = mMetadataView.getUserBlockMeta(userId, blockId);
           if (block != null) {
-            candidateDirView.markUserBlockMoveOut(userId, blockId, block.getBlockSize());
-            plan.toEvict().add(new Pair<>(blockId, candidateDirView.toBlockStoreLocation()));
+            long blockUseCount =  mMetadataView.getBlockUseCount(block);
+            if (blockUseCount > 0) {
+              candidateDirView.markUserBlockMoveOut(userId, blockId, block.getBlockSize() / blockUseCount);
+              plan.toEvict().add(new Pair<>(blockId, candidateDirView.toBlockStoreLocation()));
+            }
           }
         } catch (BlockDoesNotExistException e) {
           continue;
@@ -291,25 +297,31 @@ public abstract class AbstractEvictor extends AbstractBlockStoreEventListener im
           if (block == null) {
             continue;
           }
+          long blockUseCount =  mMetadataView.getBlockUseCount(block);
+
+          if (blockUseCount <= 0){
+            continue;
+          }
+          long blockSpace = block.getBlockSize() / blockUseCount;
           StorageDirEvictorView nextDirView
               = (StorageDirEvictorView) mAllocator.allocateUserBlockWithView(
-              Sessions.MIGRATE_DATA_SESSION_ID, userId, block.getBlockSize(),
+              Sessions.MIGRATE_DATA_SESSION_ID, userId, blockSpace,
               BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), mMetadataView);
           if (nextDirView == null) {
-            nextDirView = cascadingEvictUser(userId, block.getBlockSize(),
+            nextDirView = cascadingEvictUser(userId, blockSpace,
                 BlockStoreLocation.anyDirInTier(nextTierView.getTierViewAlias()), plan, mode);
           }
           if (nextDirView == null) {
             // If we failed to find a dir in the next tier to move this block, evict it and
             // continue. Normally this should not happen.
             plan.toEvict().add(new Pair<>(blockId, block.getBlockLocation()));
-            candidateDirView.markUserBlockMoveOut(userId, blockId, block.getBlockSize());
+            candidateDirView.markUserBlockMoveOut(userId, blockId, blockSpace);
             continue;
           }
           plan.toMove().add(new BlockTransferInfo(blockId, block.getBlockLocation(),
               nextDirView.toBlockStoreLocation()));
-          candidateDirView.markUserBlockMoveOut(userId, blockId, block.getBlockSize());
-          nextDirView.markUserBlockMoveIn(userId, blockId, block.getBlockSize());
+          candidateDirView.markUserBlockMoveOut(userId, blockId, blockSpace);
+          nextDirView.markUserBlockMoveIn(userId, blockId, blockSpace);
         } catch (BlockDoesNotExistException e) {
           continue;
         }

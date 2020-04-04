@@ -242,4 +242,11 @@ public class BlockMetadataEvictorView extends BlockMetadataView {
       return null;
     }
   }
+  public long getBlockUseCount(BlockMeta blockMeta){
+    return mMetadataManager.getBlockUseCount(blockMeta);
+  }
+
+  public long getBlockUseCount(long blockId) throws BlockDoesNotExistException {
+    return mMetadataManager.getBlockUseCount(mMetadataManager.getBlockMeta(blockId));
+  }
 }
