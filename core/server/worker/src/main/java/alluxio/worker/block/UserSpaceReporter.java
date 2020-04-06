@@ -1,6 +1,9 @@
 package alluxio.worker.block;
 
+import alluxio.exception.BlockDoesNotExistException;
 import alluxio.heartbeat.HeartbeatExecutor;
+import alluxio.util.IdUtils;
+import alluxio.wire.FileInfo;
 
 import com.google.common.io.Closer;
 import org.slf4j.Logger;
@@ -39,7 +42,7 @@ public class UserSpaceReporter implements HeartbeatExecutor {
     }
 
     //preload
-    mBlockIdToFileNameMap.put(50415534080L, "test1_10M.txt");
+/*    mBlockIdToFileNameMap.put(50415534080L, "test1_10M.txt");
     mBlockIdToFileNameMap.put(50432311296L, "test1_20M.txt");
     mBlockIdToFileNameMap.put(50449088512L, "test1_30M.txt");
     mBlockIdToFileNameMap.put(50465865728L, "test1_40M.txt");
@@ -58,7 +61,7 @@ public class UserSpaceReporter implements HeartbeatExecutor {
     mBlockIdToFileNameMap.put(201460809728L, "test4_20M.txt");
     mBlockIdToFileNameMap.put(201477586944L, "test4_30M.txt");
     mBlockIdToFileNameMap.put(201494364160L, "test4_40M.txt");
-    mBlockIdToFileNameMap.put(201511141376L, "test4_50M.txt");
+    mBlockIdToFileNameMap.put(201511141376L, "test4_50M.txt");*/
     /*test1_10M 50415534080
     test1_20M 50432311296
     test1_30M 50449088512
@@ -93,22 +96,37 @@ public class UserSpaceReporter implements HeartbeatExecutor {
     Map<Long, Map<String, List<Long>>> userBlockIdsOnTiers = storeMeta.getAllBlockList();
     for (Map.Entry<Long, Long> entry : userCapacities.entrySet()) {
       long userId = entry.getKey();
-      result.append("user ").append(String.valueOf(userId)).append(" capacity is ")
+      /*result.append("user ").append(String.valueOf(userId)).append(" capacity is ")
           .append(String.valueOf(entry.getValue() / (1024 * 1024))).append("mb, used space is ")
           .append(String.valueOf(userUsedBytes.get(userId) / (1024 * 1024))).append("mb\n");
       result.append("user ").append(String.valueOf(userId)).append(" has ")
-          .append(String.valueOf(userNumOfBlocks.get(userId))).append(" blocks.\n").append("They are:\n");
+          .append(String.valueOf(userNumOfBlocks.get(userId))).append(" blocks.\n").append("They are:\n");*/
+      result.append("swh").append(userId).append("\t").append(entry.getValue() / (1024 * 1024))
+          .append("\t").append(userUsedBytes.get(userId) / (1024 * 1024)).append("\n");
+
       for (Map.Entry<String, List<Long>> listEntry : userBlockIdsOnTiers.get(userId).entrySet()) {
         String tierAlias = listEntry.getKey();
         List<Long> blockIds = listEntry.getValue();
-        result.append(tierAlias).append(" : ");
+        //result.append(tierAlias).append(" : ");
         for (Long blockId : blockIds) {
-          result.append(String.valueOf(blockId)).append("(").append(mBlockIdToFileNameMap.get(blockId)).append("), ");
+          try {
+            String fileName = mBlockIdToFileNameMap.get(blockId);
+            if (fileName == null){
+              FileInfo fileInfo = mBlockWorker.getFileInfo(IdUtils.fileIdFromBlockId(blockId));
+              fileName = fileInfo.getName();
+              mBlockIdToFileNameMap.put(blockId, fileName);
+            }
+            //result.append(fileName).append("(").append(mBlockWorker.getBlockUsedSpace(blockId) / (1024 * 1024)).append("mb), ");
+            result.append(fileName).append("-").append(mBlockWorker.getBlockUsedSpace(blockId) / (1024 * 1024)).append("\t");
+          } catch (IOException | BlockDoesNotExistException e) {
+            e.printStackTrace();
+          }
         }
-        result.append("\n");
+        //result.append("\n");
       }
       result.append("\n");
     }
+
     return result.toString();
   }
 

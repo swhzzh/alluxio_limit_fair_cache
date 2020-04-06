@@ -310,6 +310,11 @@ public final class DefaultBlockWorker extends AbstractWorker implements BlockWor
   }
 
   @Override
+  public double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException {
+    return mBlockStore.getBlockUsedSpace(blockId);
+  }
+
+  @Override
   public void abortBlock(long sessionId, long blockId) throws BlockAlreadyExistsException,
       BlockDoesNotExistException, InvalidWorkerStateException, IOException {
     mBlockStore.abortBlock(sessionId, blockId);

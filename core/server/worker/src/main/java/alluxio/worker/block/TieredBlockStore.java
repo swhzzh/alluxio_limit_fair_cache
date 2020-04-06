@@ -1650,6 +1650,13 @@ public class TieredBlockStore implements BlockStore {
   }
 
   @Override
+  public double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException {
+    BlockMeta blockMeta = mMetaManager.getBlockMeta(blockId);
+    long useCount = mMetaManager.getBlockUseCount(blockMeta);
+    return blockMeta.getBlockSize() * 1.0 / useCount;
+  }
+
+  @Override
   public boolean checkStorage() {
     try (LockResource r = new LockResource(mMetadataWriteLock)) {
       List<StorageDir> dirsToRemove = new ArrayList<>();

@@ -397,4 +397,6 @@ public interface BlockStore extends SessionCleanable {
    * @return true if at least one storage path failed check and is removed, false otherwise
    */
   boolean checkStorage();
+
+  double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException;
 }

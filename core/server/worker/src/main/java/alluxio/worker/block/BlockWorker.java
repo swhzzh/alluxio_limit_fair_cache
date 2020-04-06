@@ -49,6 +49,8 @@ public interface BlockWorker extends Worker, SessionCleanable {
 
   String generateUserSpaceReport();
 
+  double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException;
+
   /**
    * Aborts the temporary block created by the session.
    *
