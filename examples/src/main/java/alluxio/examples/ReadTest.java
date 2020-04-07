@@ -53,7 +53,7 @@ public class ReadTest {
           closer.register(FileSystem.Factory.create(fsContext));
       mUserToFileSystemMap.put("swh" + i, fs);
     }
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 100; i++) {
       String user = selectUserRandomly();
       String filePath = selectFileRandomly();
       AlluxioURI uri = new AlluxioURI(filePath);
@@ -77,9 +77,11 @@ public class ReadTest {
       try {
         Thread.sleep(5000);
         String userSpaceReport = fs.generateUserSpaceReport();
-        fileWriter.append(String.valueOf(i)).append("\n").append(user).append(" read ").append(filePath).append("\n\n")
-            .append("The user space report is :\n")
-            .append(userSpaceReport).append("\n");
+//        fileWriter.append(String.valueOf(i)).append("\n").append(user).append(" read ").append(filePath).append("\n\n")
+//            .append("The user space report is :\n")
+//            .append(userSpaceReport).append("\n");
+        fileWriter.append(String.valueOf(i)).append(".").append(user).append(" access ").append(filePath).append("\n")
+            .append(userSpaceReport);
         if (i % 10 == 0){
           fileWriter.flush();
         }
