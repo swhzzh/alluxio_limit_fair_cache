@@ -51,6 +51,7 @@ public interface BlockWorker extends Worker, SessionCleanable {
 
   double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException;
 
+  void updateCacheHitAndMiss(long userId, Boolean hit);
   /**
    * Aborts the temporary block created by the session.
    *

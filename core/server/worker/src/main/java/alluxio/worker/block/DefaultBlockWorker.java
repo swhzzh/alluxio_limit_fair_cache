@@ -56,6 +56,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -125,6 +126,9 @@ public final class DefaultBlockWorker extends AbstractWorker implements BlockWor
   private final UfsManager mUfsManager;
   private SpaceReserver mSpaceReserver;
   private UserSpaceReporter mUserSpaceReporter;
+
+  private Map<Long, Integer> mUserIdToHitCountMap = new HashMap<>();
+  private Map<Long, Integer> mUserIdToMissCountMap = new HashMap<>();
   /**
    * Constructs a default block worker.
    *
@@ -312,6 +316,26 @@ public final class DefaultBlockWorker extends AbstractWorker implements BlockWor
   @Override
   public double getBlockUsedSpace(long blockId) throws BlockDoesNotExistException {
     return mBlockStore.getBlockUsedSpace(blockId);
+  }
+
+  @Override
+  public void updateCacheHitAndMiss(long userId, Boolean hit) {
+    if (hit){
+      mUserIdToHitCountMap.put(userId, mUserIdToHitCountMap.getOrDefault(userId, 0) + 1);
+    }
+    else {
+      mUserIdToMissCountMap.put(userId, mUserIdToMissCountMap.getOrDefault(userId, 0) + 1);
+    }
+    for (Map.Entry<Long, Integer> entry : mUserIdToHitCountMap.entrySet()) {
+      long iUserId = entry.getKey();
+      LOG.info("swh{} cache hits {} times",
+          iUserId, entry.getValue());
+    }
+    for (Map.Entry<Long, Integer> entry : mUserIdToMissCountMap.entrySet()) {
+      long iUserId = entry.getKey();
+      LOG.info("swh{} cache misses {} times",
+          iUserId, entry.getValue());
+    }
   }
 
   @Override

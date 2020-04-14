@@ -78,6 +78,7 @@ public final class UserBlockReadHandler extends AbstractReadHandler<BlockReadReq
     /** An object storing the mapping of tier aliases to ordinals. */
     private final StorageTierAssoc mStorageTierAssoc = new WorkerStorageTierAssoc();
     private long mUserId;
+    private Boolean mHit = false;
     BlockDataReader(BlockReadRequestContext context, StreamObserver<ReadResponse> response,
         BlockWorker blockWorker, long userId) {
       super(context, response);
@@ -102,6 +103,7 @@ public final class UserBlockReadHandler extends AbstractReadHandler<BlockReadReq
           context.setBlockReader(null);
         }
       }
+      //mWorker.updateCacheHitAndMiss(mUserId, mHit);
     }
 
     @Override
@@ -166,6 +168,7 @@ public final class UserBlockReadHandler extends AbstractReadHandler<BlockReadReq
             context.setBlockReader(reader);
             mWorker.accessUserBlock(request.getSessionId(), mUserId, request.getId());
             ((FileChannel) reader.getChannel()).position(request.getStart());
+            mHit = true;
             return;
           }
           catch (BlockDoesNotExistException e){

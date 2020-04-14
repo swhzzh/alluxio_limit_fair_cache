@@ -19,6 +19,8 @@ import com.google.common.io.Closer;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +32,7 @@ public class ReadTest {
 
 
   public static void main(String[] args) {
+
     Closer closer = Closer.create();
     FileWriter fileWriter = null;
     try {
@@ -53,9 +56,14 @@ public class ReadTest {
           closer.register(FileSystem.Factory.create(fsContext));
       mUserToFileSystemMap.put("swh" + i, fs);
     }
+    int lastFileSetNum = -1;
     for (int i = 0; i < 100; i++) {
       String user = selectUserRandomly();
       String filePath = selectFileRandomly();
+//      String filePath = select10MFileRandomly();
+//      String user = selectOneUser();
+//      lastFileSetNum = selectFileSetNum(lastFileSetNum);
+//      String filePath = selectFileNum(lastFileSetNum);
       AlluxioURI uri = new AlluxioURI(filePath);
       FileSystem fs = mUserToFileSystemMap.get(user);
       //if (!fs.exists(uri))
@@ -115,11 +123,55 @@ public class ReadTest {
     return "swh" + (random.nextInt(4) + 1);
   }
 
+  private static String selectOneUser(){
+    return "swh1";
+  }
+
   private static String selectFileRandomly(){
     String baseDir = "/test_for_all/";
     Random random = new Random();
     int testNum = random.nextInt(4) + 1;
     int sizeNum = random.nextInt(5) + 1;
     return baseDir + "test" + testNum + "_" + sizeNum + "0M.txt";
+  }
+
+  private static String select10MFileRandomly(){
+    String baseDir = "/test_for_all/";
+    Random random = new Random();
+    int fileNum = random.nextInt(20) + 1;
+    return baseDir + "test-10M-" + fileNum + ".txt";
+  }
+
+  private static String selectFileNum(int fileSetNum){
+    String baseDir = "/test_for_all/";
+    Random random = new Random();
+    int fileNum = random.nextInt(5) + 1;
+    return baseDir + "test-10M-" + (fileSetNum * 5 + fileNum) + ".txt";
+  }
+
+  private static int selectFileSetNum(int lastFileSetNum){
+    Random random = new Random();
+    if (lastFileSetNum == -1){
+      return random.nextInt(6);
+    }
+    List<Integer> nums = new ArrayList<>();
+    for (int i = 0; i < 6; i++) {
+      nums.add(i);
+    }
+    nums.remove(Integer.valueOf(lastFileSetNum));
+    switch (random.nextInt(20)){
+      case 0:
+        return nums.get(0);
+      case 1:
+        return nums.get(1);
+      case 2:
+        return nums.get(2);
+      case 3:
+        return nums.get(3);
+      case 4:
+        return nums.get(4);
+      default:
+        return lastFileSetNum;
+    }
   }
 }
